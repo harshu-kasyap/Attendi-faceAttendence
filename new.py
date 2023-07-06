@@ -10,6 +10,37 @@ from firebase_admin import db
 from firebase_admin import storage
 import numpy as np
 from datetime import datetime
+import pyttsx3
+
+def voice_command():
+    engine = pyttsx3.init()
+    engine.setProperty('rate', 150)
+    engine.setProperty('volume', 1.2)
+    voices = engine.getProperty('voices')
+    engine.setProperty('voice', voices[1].id)  # Female voice
+
+    # Get the current date and time
+    current_time = datetime.now()
+    hour = current_time.hour
+
+    # Greet according to the time of day
+    if 5 <= hour < 12:
+        greeting = "Good morning!"
+    elif 12 <= hour < 18:
+        greeting = "Good afternoon!"
+    else:
+        greeting = "Good evening!"
+
+    # Speak the greeting
+    engine.say(greeting)
+    engine.runAndWait()
+    engine.say("Hii user . your Attendence is Marked!")
+
+    engine.runAndWait()
+
+def is_attendance_marked(id):
+    # Implement your logic here to check if the attendance is already marked for the given student ID
+    return False
 
 cred = credentials.Certificate("ServiseAccounttKey.json")
 firebase_admin.initialize_app(cred, {
@@ -18,9 +49,10 @@ firebase_admin.initialize_app(cred, {
 })
 
 
+
 bucket = storage.bucket()
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 cap.set(3, 640)
 cap.set(4, 480)
 
@@ -32,7 +64,6 @@ modePathList = os.listdir(folderModePath)
 imgModeList = []
 for path in modePathList:
     imgModeList.append(cv2.imread(os.path.join(folderModePath, path)))
-# print(len(imgModeList))
 
 # Load the encoding file
 print("Loading Encode File ...")
@@ -40,7 +71,6 @@ file = open('EncodeFile.p', 'rb')
 encodeListKnownWithIds = pickle.load(file)
 file.close()
 encodeListKnown, studentIds = encodeListKnownWithIds
-# print(studentIds)
 print("Encode File Loaded")
 
 modeType = 0
@@ -64,15 +94,10 @@ while True:
         for encodeFace, faceLoc in zip(encodeCurFrame, faceCurFrame):
             matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
             faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
-            # print("matches", matches)
-            # print("faceDis", faceDis)
 
             matchIndex = np.argmin(faceDis)
-            # print("Match Index", matchIndex)
 
             if matches[matchIndex]:
-                # print("Known Face Detected")
-                # print(studentIds[matchIndex])
                 y1, x2, y2, x1 = faceLoc
                 y1, x2, y2, x1 = y1 * 4, x2 * 4, y2 * 4, x1 * 4
                 bbox = 55 + x1, 162 + y1, x2 - x1, y2 - y1
@@ -89,7 +114,7 @@ while True:
             try:
                 if counter == 1:
                     # Get the Data
-                    studentInfo = db.reference(f'StudentsId/{id}').get()
+                    studentInfo = db.reference(f'StudentIds/{id}').get()
                     print(studentInfo)
                     # Get the Image from the storage
                     blob = bucket.blob(f'Images/{id}.png')
@@ -100,24 +125,24 @@ while True:
                                                        "%Y-%m-%d %H:%M:%S")
                     secondsElapsed = (datetime.now() - datetimeObject).total_seconds()
                     print(secondsElapsed)
-                    if secondsElapsed > 30:
-                        ref = db.reference(f'StudentsId/{id}')
+                    if secondsElapsed > 30 and not is_attendance_marked(id):
+                        ref = db.reference(f'StudentIds/{id}')
                         studentInfo['total_attendance'] += 1
                         ref.child('total_attendance').set(studentInfo['total_attendance'])
                         ref.child('last_attendance_time').set(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+                        voice_command()  # Call the voice command function
                     else:
                         modeType = 3
                         counter = 0
                         imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
                 if modeType != 3:
-
-                    if 10 < counter < 20:
+                    if 40 < counter < 60:
                         modeType = 2
 
                     imgBackground[44:44 + 633, 808:808 + 414] = imgModeList[modeType]
 
-                    if counter <= 10:
+                    if counter <= 40:
                         cv2.putText(imgBackground, str(studentInfo['total_attendance']), (861, 125),
                                     cv2.FONT_HERSHEY_COMPLEX, 1, (255, 255, 255), 1)
                         cv2.putText(imgBackground, str(studentInfo['major']), (1006, 550),
@@ -140,7 +165,7 @@ while True:
 
                     counter += 1
 
-                    if counter >= 20:
+                    if counter >= 40:
                         counter = 0
                         modeType = 0
                         studentInfo = []
@@ -160,3 +185,6 @@ while True:
 
 cap.release()
 cv2.destroyAllWindows()
+
+#
+#
